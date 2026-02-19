@@ -292,7 +292,7 @@ async function postTweet() {
     console.log('🔍 Verifying post...');
     
     // Check for success indicators
-    const successIndicators = [
+    const postSuccessIndicators = [
       'Your post was sent',
       'Your Tweet was sent',
       'Posted',
@@ -300,7 +300,7 @@ async function postTweet() {
     ];
     
     let success = false;
-    for (const indicator of successIndicators) {
+    for (const indicator of postSuccessIndicators) {
       if (await page.locator(`text=${indicator}`).count() > 0) {
         success = true;
         break;
