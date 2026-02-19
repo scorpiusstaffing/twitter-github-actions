@@ -23,52 +23,31 @@ if (!X_USERNAME || !X_PASSWORD) {
 async function postTweet() {
   console.log('🚀 Starting Twitter/X posting script...');
   console.log(`📝 Tweet text: "${TWEET_TEXT}"`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'production'}`);
+  console.log(`🔧 Platform: ${process.platform}`);
   
   let browser = null;
   try {
-    // Launch browser with advanced anti-detection settings
+    // Launch browser with minimal settings for GitHub Actions
     browser = await chromium.launch({
       headless: true,  // GitHub Actions requires headless
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920,1080',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-web-security',
-        '--disable-site-isolation-trials',
-        '--disable-features=BlockInsecurePrivateNetworkRequests'
+        '--disable-dev-shm-usage'
       ]
     });
 
-    // Create context with advanced anti-detection
+    // Create context with basic settings
     const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      locale: 'en-US',
-      timezoneId: 'America/Los_Angeles',
-      permissions: ['geolocation'],
-      geolocation: { latitude: 34.0522, longitude: -118.2437 }, // Los Angeles
-      colorScheme: 'light'
+      viewport: { width: 1280, height: 720 },
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     });
 
-    // Remove webdriver property
+    // Minimal anti-detection: remove webdriver property
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', {
         get: () => undefined
-      });
-      
-      // Overwrite the plugins property to use a custom getter
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5]
-      });
-      
-      // Overwrite the languages property
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en']
       });
     });
 
@@ -368,22 +347,37 @@ async function postTweet() {
     process.exit(0);
 
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('❌ CRITICAL ERROR posting tweet:');
+    console.error(`   Message: ${error.message}`);
+    console.error(`   Name: ${error.name}`);
+    console.error(`   Stack: ${error.stack}`);
     
-    // Take screenshot for debugging
+    // Take screenshot if browser is available
     if (browser) {
       try {
-        const pages = await browser.contexts()[0]?.pages() || [];
-        if (pages.length > 0) {
-          await pages[0].screenshot({ path: 'error-screenshot.png' });
-          console.log('📸 Screenshot saved: error-screenshot.png');
+        const contexts = await browser.contexts();
+        if (contexts.length > 0) {
+          const pages = await contexts[0].pages();
+          if (pages.length > 0) {
+            await pages[0].screenshot({ path: 'error-screenshot.png' });
+            console.log('📸 Error screenshot saved: error-screenshot.png');
+          }
         }
       } catch (screenshotError) {
         console.error('Failed to take screenshot:', screenshotError.message);
       }
+      
+      try {
+        await browser.close();
+        console.log('✅ Browser closed');
+      } catch (closeError) {
+        console.error('Failed to close browser:', closeError.message);
+      }
+    } else {
+      console.log('⚠️ Browser was never launched or already closed');
     }
     
+    console.log(`⏰ Script ran for: ${((Date.now() - startTime) / 1000).toFixed(1)} seconds`);
     process.exit(1);
   } finally {
     if (browser) {
