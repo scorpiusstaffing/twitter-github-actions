@@ -26,7 +26,7 @@ async function postTweet() {
   
   let browser = null;
   try {
-    // Launch browser with realistic settings
+    // Launch browser with advanced anti-detection settings
     browser = await chromium.launch({
       headless: true,  // GitHub Actions requires headless
       args: [
@@ -35,57 +35,239 @@ async function postTweet() {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        '--window-size=1920,1080'
+        '--window-size=1920,1080',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-web-security',
+        '--disable-site-isolation-trials',
+        '--disable-features=BlockInsecurePrivateNetworkRequests'
       ]
     });
 
-    // Create context with realistic viewport
+    // Create context with advanced anti-detection
     const context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      locale: 'en-US',
+      timezoneId: 'America/Los_Angeles',
+      permissions: ['geolocation'],
+      geolocation: { latitude: 34.0522, longitude: -118.2437 }, // Los Angeles
+      colorScheme: 'light'
+    });
+
+    // Remove webdriver property
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+      });
+      
+      // Overwrite the plugins property to use a custom getter
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+      });
+      
+      // Overwrite the languages property
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
     });
 
     const page = await context.newPage();
 
-    // Step 1: Navigate to Twitter/X
+    // Step 1: Navigate to Twitter/X with multiple URL attempts
     console.log('🌐 Navigating to Twitter/X...');
-    await page.goto('https://x.com/login', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+    
+    // Try multiple URLs (Twitter changes these)
+    const urls = [
+      'https://x.com/i/flow/login',
+      'https://twitter.com/i/flow/login',
+      'https://x.com/login',
+      'https://twitter.com/login'
+    ];
+    
+    let loginSuccess = false;
+    for (const url of urls) {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        console.log(`✅ Loaded: ${url}`);
+        
+        // Wait for page to settle
+        await page.waitForTimeout(3000);
+        
+        // Check if we're on a login page
+        const hasLoginElements = await page.locator('input[autocomplete="username"], input[name="text"], input[type="email"]').count() > 0;
+        if (hasLoginElements) {
+          loginSuccess = true;
+          break;
+        }
+      } catch (error) {
+        console.log(`⚠️ Failed to load ${url}: ${error.message}`);
+      }
+    }
+    
+    if (!loginSuccess) {
+      throw new Error('Could not load Twitter/X login page');
+    }
 
-    // Step 2: Login
+    // Step 2: Login with multiple selector attempts
     console.log('🔐 Logging in...');
     
-    // Enter username
-    await page.fill('input[autocomplete="username"]', X_USERNAME);
-    await page.click('div[role="button"]:has-text("Next")');
-    await page.waitForTimeout(2000);
-
-    // If password field appears
-    if (await page.locator('input[name="password"]').count() > 0) {
-      await page.fill('input[name="password"]', X_PASSWORD);
-      await page.click('div[role="button"]:has-text("Log in")');
-    } else {
-      // Sometimes Twitter asks for username again (unusual login)
-      await page.fill('input[name="text"]', X_USERNAME);
-      await page.click('div[role="button"]:has-text("Next")');
-      await page.waitForTimeout(2000);
-      await page.fill('input[name="password"]', X_PASSWORD);
-      await page.click('div[role="button"]:has-text("Log in")');
-    }
-
-    // Wait for login to complete
-    await page.waitForTimeout(5000);
+    // Try multiple username field selectors
+    const usernameSelectors = [
+      'input[autocomplete="username"]',
+      'input[name="text"]',
+      'input[type="email"]',
+      'input[autocomplete="email"]'
+    ];
     
-    // Check if login was successful
-    const loginError = await page.locator('text=Incorrect password').count();
-    if (loginError > 0) {
-      throw new Error('Login failed: Incorrect password');
+    let usernameField = null;
+    for (const selector of usernameSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        usernameField = page.locator(selector);
+        console.log(`✅ Found username field: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!usernameField) {
+      // Take screenshot for debugging
+      await page.screenshot({ path: 'login-error.png' });
+      throw new Error('Could not find username field on login page');
+    }
+    
+    // Enter username
+    await usernameField.fill(X_USERNAME);
+    await page.waitForTimeout(1000);
+    
+    // Find and click Next button
+    const nextButtons = [
+      'div[role="button"]:has-text("Next")',
+      'button:has-text("Next")',
+      'span:has-text("Next")',
+      '[data-testid="LoginForm_Login_Button"]'
+    ];
+    
+    let nextClicked = false;
+    for (const buttonSelector of nextButtons) {
+      const buttonCount = await page.locator(buttonSelector).count();
+      if (buttonCount > 0) {
+        await page.locator(buttonSelector).click();
+        console.log(`✅ Clicked Next button: ${buttonSelector}`);
+        nextClicked = true;
+        break;
+      }
+    }
+    
+    if (!nextClicked) {
+      // Try pressing Enter
+      await page.keyboard.press('Enter');
+      console.log('✅ Pressed Enter instead of Next button');
+    }
+    
+    await page.waitForTimeout(3000);
+
+    // Step 3: Enter password
+    console.log('🔑 Entering password...');
+    
+    // Try multiple password field selectors
+    const passwordSelectors = [
+      'input[name="password"]',
+      'input[type="password"]',
+      'input[autocomplete="current-password"]'
+    ];
+    
+    let passwordField = null;
+    for (const selector of passwordSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        passwordField = page.locator(selector);
+        console.log(`✅ Found password field: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!passwordField) {
+      throw new Error('Could not find password field after username');
+    }
+    
+    await passwordField.fill(X_PASSWORD);
+    await page.waitForTimeout(1000);
+    
+    // Find and click Login button
+    const loginButtons = [
+      'div[role="button"]:has-text("Log in")',
+      'button:has-text("Log in")',
+      'span:has-text("Log in")',
+      '[data-testid="LoginForm_Login_Button"]'
+    ];
+    
+    let loginClicked = false;
+    for (const buttonSelector of loginButtons) {
+      const buttonCount = await page.locator(buttonSelector).count();
+      if (buttonCount > 0) {
+        await page.locator(buttonSelector).click();
+        console.log(`✅ Clicked Login button: ${buttonSelector}`);
+        loginClicked = true;
+        break;
+      }
+    }
+    
+    if (!loginClicked) {
+      // Try pressing Enter
+      await page.keyboard.press('Enter');
+      console.log('✅ Pressed Enter to login');
     }
 
-    // Look for compose button as success indicator
-    const composeButton = page.locator('a[href="/compose/post"]');
-    await composeButton.waitFor({ state: 'visible', timeout: 10000 });
-    console.log('✅ Login successful!');
+    // Wait for login to complete with multiple success checks
+    console.log('⏳ Waiting for login to complete...');
+    await page.waitForTimeout(8000);
+    
+    // Check for login errors
+    const loginErrors = [
+      'Incorrect password',
+      'Wrong password',
+      'Invalid password',
+      'Your password is incorrect',
+      'Something went wrong',
+      'Try again later'
+    ];
+    
+    for (const errorText of loginErrors) {
+      const errorCount = await page.locator(`text=${errorText}`).count();
+      if (errorCount > 0) {
+        await page.screenshot({ path: 'login-error-detail.png' });
+        throw new Error(`Login failed: ${errorText}`);
+      }
+    }
+    
+    // Check for successful login indicators
+    const successIndicators = [
+      'a[href="/compose/post"]',  // Compose button
+      '[data-testid="AppTabBar_Home_Link"]',  // Home link
+      '[aria-label="Home"]',  // Home icon
+      'text=Home',  // Home text
+      'text=Following',  // Following tab
+      'text=For you'  // For you tab
+    ];
+    
+    let loginVerified = false;
+    for (const indicator of successIndicators) {
+      const count = await page.locator(indicator).count();
+      if (count > 0) {
+        console.log(`✅ Login successful! Found: ${indicator}`);
+        loginVerified = true;
+        break;
+      }
+    }
+    
+    if (!loginVerified) {
+      // Take screenshot to see what's on the page
+      await page.screenshot({ path: 'login-unknown-state.png' });
+      const pageText = await page.textContent('body');
+      console.log('Page content sample:', pageText.substring(0, 500));
+      throw new Error('Login status unclear - could not find success indicators');
+    }
 
     // Step 3: Human-like activity before posting
     console.log('🤖 Simulating human activity...');
