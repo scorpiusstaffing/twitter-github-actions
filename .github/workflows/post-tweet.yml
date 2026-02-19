@@ -1,0 +1,64 @@
+name: Post Tweet
+
+on:
+  # Schedule: Every 6 hours (GitHub Actions provides 2,000 free minutes/month)
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours at minute 0
+  
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      tweet_text:
+        description: 'Tweet text (optional)'
+        required: false
+        default: ''
+
+  # Trigger on push to main (for testing)
+  push:
+    branches: [ main ]
+
+jobs:
+  post-tweet:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Post Tweet
+        env:
+          X_USERNAME: ${{ secrets.X_USERNAME }}
+          X_PASSWORD: ${{ secrets.X_PASSWORD }}
+          TWEET_TEXT: ${{ github.event.inputs.tweet_text || 'Automated tweet from GitHub Actions at ' }}
+        run: |
+          if [ -n "$TWEET_TEXT" ]; then
+            if [ "$TWEET_TEXT" = "Automated tweet from GitHub Actions at " ]; then
+              TWEET_TEXT="${TWEET_TEXT}$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            fi
+            echo "TWEET_TEXT=$TWEET_TEXT" >> $GITHUB_ENV
+          fi
+          npm run post
+
+      - name: Upload screenshot if error
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshots
+          path: error-screenshot.png
+          if-no-files-found: ignore
+
+      - name: Success notification
+        if: success()
+        run: echo "✅ Tweet posted successfully at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"

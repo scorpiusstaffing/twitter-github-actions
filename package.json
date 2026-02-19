@@ -1,0 +1,17 @@
+{
+  "name": "twitter-github-actions",
+  "version": "1.0.0",
+  "description": "Twitter/X posting via GitHub Actions and Playwright",
+  "main": "post-tweet.js",
+  "scripts": {
+    "post": "node post-tweet.js",
+    "test": "echo \"No tests\" && exit 0"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "dotenv": "^16.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
